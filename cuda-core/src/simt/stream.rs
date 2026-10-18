@@ -215,6 +215,17 @@ impl CudaStream {
     ///
     /// Panics inside the closure are caught and discarded to prevent unwinding
     /// across the FFI boundary.
+    ///
+    /// The driver runs the callback after this call returns, so the closure
+    /// cannot borrow from the caller's stack:
+    ///
+    /// ```compile_fail,E0521
+    /// use cuda_core::simt::stream::CudaStream;
+    ///
+    /// fn enqueue(stream: &CudaStream, local: &String) {
+    ///     stream.launch_host_function(|| { local.len(); }).unwrap();
+    /// }
+    /// ```
     pub fn launch_host_function<F: FnOnce() + Send>(
         &self,
         host_func: F,

@@ -430,6 +430,14 @@ where
 
 /// A [`DeviceOperation`] that immediately returns a pre-computed value without
 /// touching the GPU.
+///
+/// `Value<T>` is `Send` exactly when `T` is. The compiler derives that, and
+/// nothing here may override it with a manual `unsafe impl Send`:
+///
+/// ```compile_fail,E0277
+/// fn assert_send<T: Send>() {}
+/// assert_send::<cuda_async::simt::device_operation::Value<std::rc::Rc<u8>>>();
+/// ```
 pub struct Value<T>(T);
 
 /// # Safety
@@ -482,6 +490,16 @@ impl<T: Send> IntoDeviceOperation<T> for T {
 /// Useful when building the inner operation requires state only available
 /// after scheduling (though it does not receive the [`ExecutionContext`] --
 /// see [`StreamOperation`] for that).
+///
+/// The closure runs on whichever thread drives the future, so it must be
+/// `Send`:
+///
+/// ```compile_fail,E0277
+/// use cuda_async::simt::device_operation::{empty, value};
+///
+/// let rc = std::rc::Rc::new(1u8);
+/// let op = empty(move || value(*rc));
+/// ```
 pub struct Empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> {
     /// Closure that produces the inner operation.
     closure: F,
