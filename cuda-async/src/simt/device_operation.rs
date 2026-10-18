@@ -440,12 +440,6 @@ where
 /// ```
 pub struct Value<T>(T);
 
-/// # Safety
-///
-/// `Value` holds only the inner `T`. If `T` is `Send` the wrapper is too;
-/// the bound is enforced by the `DeviceOperation` impl.
-unsafe impl<T> Send for Value<T> {}
-
 /// Returns the wrapped value directly -- no GPU work is performed.
 impl<T: Send + 'static> DeviceOperation for Value<T> {
     type Output = T;
@@ -500,13 +494,13 @@ impl<T: Send> IntoDeviceOperation<T> for T {
 /// let rc = std::rc::Rc::new(1u8);
 /// let op = empty(move || value(*rc));
 /// ```
-pub struct Empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> {
+pub struct Empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO + Send> {
     /// Closure that produces the inner operation.
     closure: F,
 }
 
 /// Wraps a closure in an [`Empty`] deferred operation.
-pub fn empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO>(
+pub fn empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO + Send>(
     closure: F,
 ) -> Empty<O, DO, F> {
     Empty { closure }
@@ -516,10 +510,13 @@ pub fn empty<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO>(
 ///
 /// The closure `F` and its produced operation `DO` are both `Send`. The
 /// struct owns the closure exclusively.
-unsafe impl<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> Send for Empty<O, DO, F> {}
+unsafe impl<O: Send, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO + Send> Send
+    for Empty<O, DO, F>
+{
+}
 
 /// Invokes the closure to produce the inner operation, then executes it.
-impl<O: Send + 'static, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> DeviceOperation
+impl<O: Send + 'static, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO + Send> DeviceOperation
     for Empty<O, DO, F>
 {
     type Output = O;
@@ -533,7 +530,7 @@ impl<O: Send + 'static, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> Devi
 }
 
 /// Schedules via the thread-local default policy.
-impl<O: Send + 'static, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO> IntoFuture
+impl<O: Send + 'static, DO: DeviceOperation<Output = O>, F: FnOnce() -> DO + Send> IntoFuture
     for Empty<O, DO, F>
 {
     type Output = Result<O, DeviceError>;

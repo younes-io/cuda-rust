@@ -208,16 +208,19 @@ impl CudaStream {
     /// `oneshot::Sender::send` or `Waker::wake` in `host_func` to unblock a
     /// future when GPU work finishes.
     ///
-    /// `host_func` is boxed, leaked into a raw pointer, and passed as user
-    /// data to `cuLaunchHostFunc`. The driver calls
-    /// `callback_wrapper` on a driver-internal
-    /// thread, which reclaims the box and invokes the closure.
+    /// `host_func` is boxed into a raw pointer and passed as user data to
+    /// `cuLaunchHostFunc`. The driver calls `callback_wrapper` on a
+    /// driver-internal thread, which reclaims the box and invokes the closure.
+    /// If the driver rejects the launch, the callback never runs, so the box
+    /// is reclaimed here instead and the closure is dropped.
+    ///
+    /// The closure must be `'static`: the driver runs it after this call
+    /// returns, on its own thread, so any borrow of the caller's stack would
+    /// dangle. Move owned data (an `Arc`, a `oneshot::Sender`, a `Waker`)
+    /// into it.
     ///
     /// Panics inside the closure are caught and discarded to prevent unwinding
     /// across the FFI boundary.
-    ///
-    /// The driver runs the callback after this call returns, so the closure
-    /// cannot borrow from the caller's stack:
     ///
     /// ```compile_fail,E0521
     /// use cuda_core::simt::stream::CudaStream;
@@ -226,19 +229,25 @@ impl CudaStream {
     ///     stream.launch_host_function(|| { local.len(); }).unwrap();
     /// }
     /// ```
-    pub fn launch_host_function<F: FnOnce() + Send>(
+    pub fn launch_host_function<F: FnOnce() + Send + 'static>(
         &self,
         host_func: F,
     ) -> Result<(), DriverError> {
-        let boxed = Box::new(host_func);
-        unsafe {
+        let user_data = Box::into_raw(Box::new(host_func)).cast::<c_void>();
+        let result = unsafe {
             cuda_bindings::cuLaunchHostFunc(
                 self.cu_stream,
                 Some(Self::callback_wrapper::<F>),
-                Box::into_raw(boxed) as *mut c_void,
+                user_data,
             )
             .result()
+        };
+        if result.is_err() {
+            // SAFETY: the driver never runs the callback for a failed launch,
+            // so this is the only owner of the box produced above.
+            drop(unsafe { Box::from_raw(user_data.cast::<F>()) });
         }
+        result
     }
 
     /// `extern "C"` trampoline invoked by the CUDA driver on a driver-internal
@@ -254,7 +263,7 @@ impl CudaStream {
     ///   where `f: F`.
     /// - Must be called exactly once per enqueued callback (double-free
     ///   otherwise).
-    unsafe extern "C" fn callback_wrapper<F: FnOnce() + Send>(callback: *mut c_void) {
+    unsafe extern "C" fn callback_wrapper<F: FnOnce() + Send + 'static>(callback: *mut c_void) {
         let _ = std::panic::catch_unwind(|| {
             let callback: Box<F> = unsafe { Box::from_raw(callback as *mut F) };
             callback();

@@ -13,7 +13,9 @@ use cuda_core::Device;
 #[test]
 fn round_robin_rejects_zero_streams() {
     let device = Device::new(0).unwrap();
-    let err = StreamPoolRoundRobin::new(&device, 0).err().expect("new(0) must fail");
+    let err = StreamPoolRoundRobin::new(&device, 0)
+        .err()
+        .expect("new(0) must fail");
     assert!(matches!(err, DeviceError::Scheduling(_)), "{err}");
 }
 
