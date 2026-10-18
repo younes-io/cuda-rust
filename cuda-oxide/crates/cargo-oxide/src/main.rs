@@ -1191,6 +1191,37 @@ mod tests {
     }
 
     #[test]
+    fn standalone_example_name_is_the_package_name_not_the_directory_name() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "cargo-oxide-renamed-dir-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"standalone-demo\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let ctx = commands::Context {
+            workspace_root: root.clone(),
+            codegen_crate: root.clone(),
+            examples_dir: root.clone(),
+            backend_so: root.join("unused-backend.so"),
+            is_workspace: false,
+            config: commands::OxideConfig::default(),
+        };
+
+        let name = resolve_example_name(None, &ctx, "build");
+
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(name, "standalone-demo");
+    }
+
+    #[test]
     fn clean_parser_accepts_command_without_arguments() {
         let cli =
             Cli::try_parse_from(["cargo-oxide", "clean"]).expect("clean command should parse");
