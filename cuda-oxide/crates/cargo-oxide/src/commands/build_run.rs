@@ -33,11 +33,7 @@ pub fn codegen_run(
     materialize_cubin: bool,
     app_args: &[String],
 ) {
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
 
     let interop = load_interop_config(&example_dir);
 
@@ -201,11 +197,7 @@ pub fn codegen_sanitize(
     device_debug: DeviceDebug,
     materialize_cubin: bool,
 ) {
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
 
     let interop = load_interop_config(&example_dir);
     let target_arch = configured_arch(ctx, arch);
@@ -348,11 +340,7 @@ pub fn codegen_build(
 ) {
     let target_arch = configured_arch(ctx, arch);
     let materialization = prepare_materialization(ctx, materialize_cubin, arch, emit_nvvm_ir);
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
 
     if let Some(interop) =
         load_interop_config(&example_dir).filter(|config| !config.device_crates.is_empty())
@@ -470,11 +458,7 @@ pub fn codegen_inspect_ptx(
         std::process::exit(2);
     }
 
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
     if load_interop_config(&example_dir).is_some_and(|interop| {
         interop
             .device_crates

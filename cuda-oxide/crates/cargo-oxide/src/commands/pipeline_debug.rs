@@ -31,11 +31,7 @@ pub fn codegen_show_pipeline(
 ) {
     let target_arch = configured_arch(ctx, arch);
     let materialization = prepare_materialization(ctx, materialize_cubin, arch, emit_nvvm_ir);
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
 
     if load_interop_config(&example_dir).is_some_and(|config| !config.device_crates.is_empty()) {
         reject_interop_output_mode(emit_nvvm_ir, &materialization);
@@ -151,11 +147,7 @@ pub fn codegen_debug(
     use_tui: bool,
     materialize_cubin: bool,
 ) {
-    let example_dir = if ctx.is_workspace {
-        resolve_example_dir(ctx, example)
-    } else {
-        ctx.workspace_root.clone()
-    };
+    let example_dir = project_dir(ctx, example);
     let target_arch = configured_arch(ctx, arch);
     let materialization = prepare_materialization(ctx, materialize_cubin, arch, false);
     if load_interop_config(&example_dir).is_some_and(|config| !config.device_crates.is_empty()) {

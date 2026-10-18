@@ -26,19 +26,37 @@ pub struct OxideConfig {
 /// Built once at startup by [`resolve_context`] and passed by reference to
 /// every command handler. Avoids repeated filesystem walks and backend builds.
 pub struct Context {
-    /// Absolute path to the workspace root (contains top-level `Cargo.toml`).
+    /// Absolute path to the project root (contains top-level `Cargo.toml`).
+    /// The repository root in workspace mode; the project directory for a
+    /// standalone project scaffolded by `cargo oxide new`.
     pub workspace_root: PathBuf,
+    /// The cuda-oxide repository layout, present only in workspace mode.
+    /// A standalone project has no backend source tree and no examples
+    /// directory of its own.
+    pub workspace: Option<Workspace>,
+    /// Path to the built `librustc_codegen_cuda.so` shared object.
+    pub backend_so: PathBuf,
+    /// Project-local cuda-oxide defaults.
+    pub config: OxideConfig,
+}
+
+/// Paths that only exist inside the cuda-oxide repository.
+pub struct Workspace {
     /// Path to `crates/rustc-codegen-cuda` (backend source tree).
     pub codegen_crate: PathBuf,
     /// Path to `crates/rustc-codegen-cuda/examples/`.
     pub examples_dir: PathBuf,
-    /// Path to the built `librustc_codegen_cuda.so` shared object.
-    pub backend_so: PathBuf,
-    /// True when running from inside the cuda-oxide workspace; false for
-    /// standalone projects scaffolded by `cargo oxide new`.
-    pub is_workspace: bool,
-    /// Project-local cuda-oxide defaults.
-    pub config: OxideConfig,
+}
+
+impl Workspace {
+    fn at(workspace_root: &Path) -> Self {
+        let codegen_crate = backend::codegen_crate_path(workspace_root);
+        let examples_dir = codegen_crate.join("examples");
+        Workspace {
+            codegen_crate,
+            examples_dir,
+        }
+    }
 }
 
 /// Resolve the workspace root and backend, or exit with a helpful error.
@@ -55,16 +73,13 @@ pub struct Context {
 ///   operate on the current directory directly.
 pub fn resolve_context() -> Context {
     if let Some(workspace_root) = backend::find_workspace_root() {
-        let codegen_crate = backend::codegen_crate_path(&workspace_root);
-        let examples_dir = codegen_crate.join("examples");
+        let workspace = Workspace::at(&workspace_root);
         let config = load_oxide_config(&workspace_root);
         let backend_so = backend::find_or_build_backend(&workspace_root, config.backend.as_deref());
         return Context {
             workspace_root,
-            codegen_crate,
-            examples_dir,
+            workspace: Some(workspace),
             backend_so,
-            is_workspace: true,
             config,
         };
     }
@@ -78,11 +93,9 @@ pub fn resolve_context() -> Context {
         let config = load_oxide_config(&cwd);
         let backend_so = backend::find_or_build_backend(&cwd, config.backend.as_deref());
         return Context {
-            workspace_root: cwd.clone(),
-            codegen_crate: cwd.clone(),
-            examples_dir: cwd.clone(),
+            workspace_root: cwd,
+            workspace: None,
             backend_so,
-            is_workspace: false,
             config,
         };
     }
@@ -105,16 +118,13 @@ pub fn resolve_context() -> Context {
 /// `run`/`build`/`pipeline`/`setup` still build the backend on demand.
 pub fn resolve_passive_context() -> Context {
     if let Some(workspace_root) = backend::find_workspace_root() {
-        let codegen_crate = backend::codegen_crate_path(&workspace_root);
-        let examples_dir = codegen_crate.join("examples");
+        let workspace = Workspace::at(&workspace_root);
         let config = load_oxide_config_lenient(&workspace_root);
         let backend_so = backend::backend_so_candidate(&workspace_root, config.backend.as_deref());
         return Context {
             workspace_root,
-            codegen_crate,
-            examples_dir,
+            workspace: Some(workspace),
             backend_so,
-            is_workspace: true,
             config,
         };
     }
@@ -128,11 +138,9 @@ pub fn resolve_passive_context() -> Context {
         let config = load_oxide_config_lenient(&cwd);
         let backend_so = backend::backend_so_candidate(&cwd, config.backend.as_deref());
         return Context {
-            workspace_root: cwd.clone(),
-            codegen_crate: cwd.clone(),
-            examples_dir: cwd.clone(),
+            workspace_root: cwd,
+            workspace: None,
             backend_so,
-            is_workspace: false,
             config,
         };
     }
@@ -489,15 +497,38 @@ fn parse_config_env(
     Ok(env)
 }
 
+/// The directory a command operates on: the named example inside the
+/// workspace, or the project itself when standalone.
+pub(super) fn project_dir(ctx: &Context, example: &str) -> PathBuf {
+    match &ctx.workspace {
+        Some(workspace) => resolve_example_dir(workspace, example),
+        None => ctx.workspace_root.clone(),
+    }
+}
+
+/// The `package.name` of a Cargo manifest.
+pub fn package_name_from_manifest(manifest_path: &Path) -> Result<String, String> {
+    let manifest = std::fs::read_to_string(manifest_path)
+        .map_err(|error| format!("failed to read {}: {error}", manifest_path.display()))?;
+    let document: toml::Value = toml::from_str(&manifest)
+        .map_err(|error| format!("failed to parse {}: {error}", manifest_path.display()))?;
+    document
+        .get("package")
+        .and_then(|package| package.get("name"))
+        .and_then(|name| name.as_str())
+        .map(str::to_string)
+        .ok_or_else(|| format!("{} has no package.name", manifest_path.display()))
+}
+
 /// Resolve an example name to its directory path, or exit with a list of
 /// available examples if not found.
-pub(super) fn resolve_example_dir(ctx: &Context, example: &str) -> PathBuf {
-    let example_dir = ctx.examples_dir.join(example);
+pub(super) fn resolve_example_dir(workspace: &Workspace, example: &str) -> PathBuf {
+    let example_dir = workspace.examples_dir.join(example);
     if !example_dir.exists() {
         eprintln!("Error: Example not found: {}", example_dir.display());
         eprintln!();
         eprintln!("Available examples:");
-        if let Ok(entries) = std::fs::read_dir(&ctx.examples_dir) {
+        if let Ok(entries) = std::fs::read_dir(&workspace.examples_dir) {
             let mut names: Vec<_> = entries
                 .flatten()
                 .filter(|e| e.path().is_dir())

@@ -27,6 +27,16 @@ use super::*;
 /// In `check` mode, reports which files need formatting without modifying them.
 pub fn format_all(ctx: &Context, check: bool) {
     let mode = if check { "Checking" } else { "Formatting" };
+
+    // A standalone project is one Cargo package. Nested manifests below it
+    // (vendored crates, say) are not examples of anything and stay untouched.
+    let Some(workspace) = &ctx.workspace else {
+        println!("📦 {} project...", mode);
+        let formatted = run_cargo_fmt(&ctx.workspace_root, check);
+        finish(formatted, check);
+        return;
+    };
+
     let mut failed = false;
 
     // In the merged repository, shared host crates live in the stable parent
@@ -48,7 +58,7 @@ pub fn format_all(ctx: &Context, check: bool) {
     }
 
     println!("📦 {} rustc-codegen-cuda...", mode);
-    if !run_cargo_fmt(&ctx.codegen_crate, check) {
+    if !run_cargo_fmt(&workspace.codegen_crate, check) {
         failed = true;
     }
 
@@ -74,13 +84,13 @@ pub fn format_all(ctx: &Context, check: bool) {
     //   * `--all` also formats an example's path dependencies, which means
     //     re-formatting the large shared workspaces once per example.
     let mut manifests = Vec::new();
-    collect_example_manifests(&ctx.examples_dir, &mut manifests);
+    collect_example_manifests(&workspace.examples_dir, &mut manifests);
     manifests.sort();
 
     for manifest in &manifests {
         let label = manifest
             .parent()
-            .and_then(|dir| dir.strip_prefix(&ctx.examples_dir).ok())
+            .and_then(|dir| dir.strip_prefix(&workspace.examples_dir).ok())
             .unwrap_or(Path::new("."))
             .display()
             .to_string();
@@ -90,7 +100,12 @@ pub fn format_all(ctx: &Context, check: bool) {
         }
     }
 
-    if failed {
+    finish(!failed, check);
+}
+
+/// Report the outcome of every fmt run, exiting non-zero when any failed.
+fn finish(formatted: bool, check: bool) {
+    if !formatted {
         if check {
             eprintln!();
             eprintln!("❌ Some files need formatting. Run: cargo oxide fmt");
@@ -99,13 +114,12 @@ pub fn format_all(ctx: &Context, check: bool) {
             eprintln!("⚠️  Some formatting commands failed (see above)");
         }
         std::process::exit(1);
+    }
+    println!();
+    if check {
+        println!("✅ All files are properly formatted");
     } else {
-        println!();
-        if check {
-            println!("✅ All files are properly formatted");
-        } else {
-            println!("✅ All crates formatted");
-        }
+        println!("✅ All crates formatted");
     }
 }
 

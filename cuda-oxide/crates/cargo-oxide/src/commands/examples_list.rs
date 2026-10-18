@@ -29,14 +29,14 @@ struct ManifestInfo {
 }
 
 pub fn list_examples(ctx: &Context, json: bool) {
-    if !ctx.is_workspace {
+    let Some(workspace) = &ctx.workspace else {
         eprintln!("Error: `cargo oxide list` must be run from inside a cuda-oxide checkout.");
         eprintln!();
         eprintln!("The command lists examples under crates/rustc-codegen-cuda/examples/.");
         std::process::exit(1);
-    }
+    };
 
-    let examples = discover_examples(&ctx.examples_dir).unwrap_or_else(|error| {
+    let examples = discover_examples(&workspace.examples_dir).unwrap_or_else(|error| {
         eprintln!("Error: {error}");
         std::process::exit(1);
     });

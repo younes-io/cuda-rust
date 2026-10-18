@@ -858,6 +858,16 @@ fn main() {
             fail_on_finding,
         } => {
             let ctx = commands::resolve_context();
+            let Some(workspace) = &ctx.workspace else {
+                eprintln!(
+                    "Error: `cargo oxide fuzz-schedule` must be run from inside a cuda-oxide checkout."
+                );
+                eprintln!();
+                eprintln!(
+                    "The campaign drives examples under crates/rustc-codegen-cuda/examples/."
+                );
+                std::process::exit(1);
+            };
             let (seed_start, seed_end) = ptx_schedule::campaign::parse_seed_range(&seeds)
                 .unwrap_or_else(|error| {
                     eprintln!("Error: {error}");
@@ -867,7 +877,7 @@ fn main() {
                 eprintln!("Error: could not locate cargo-oxide executable: {error}");
                 std::process::exit(1);
             });
-            let simt_root = ctx
+            let simt_root = workspace
                 .codegen_crate
                 .parent()
                 .and_then(std::path::Path::parent)
@@ -1065,10 +1075,10 @@ fn main() {
         }
         Commands::Fmt { check } => {
             // Formatting compiles no device code. `format_all` reads only
-            // `workspace_root`, `codegen_crate` and `examples_dir`, which the
-            // passive resolver fills in identically, so eager resolution only
-            // added a backend build -- and a clone on a fresh checkout -- ahead
-            // of the first file being formatted.
+            // `workspace_root` and `workspace`, which the passive resolver
+            // fills in identically, so eager resolution only added a backend
+            // build -- and a clone on a fresh checkout -- ahead of the first
+            // file being formatted.
             let ctx = commands::resolve_passive_context();
             commands::format_all(&ctx, check);
         }
@@ -1091,7 +1101,7 @@ fn main() {
         }
         Commands::Update { force } => {
             // All plans resolve passively. `setup` only needs
-            // `ctx.codegen_crate`, which the passive resolver provides
+            // `ctx.workspace`, which the passive resolver provides
             // identically, while eager resolution would auto-fetch and build
             // the backend before `update` runs: a double clone+build ahead of
             // the RefreshCache arm's own clear-and-rebuild, and a wasted
@@ -1104,19 +1114,16 @@ fn main() {
 
 /// Resolves the example/project name from the CLI argument or context.
 ///
-/// In workspace mode the name is required; in standalone mode it defaults
-/// to the current directory name (which matches the package name from
-/// `cargo oxide new`).
+/// In workspace mode the name is required; in standalone mode it is the
+/// project's `package.name`, which the artifact paths are derived from.
 fn resolve_example_name(name: Option<String>, ctx: &commands::Context, subcommand: &str) -> String {
     if let Some(n) = name {
         return n;
     }
-    if !ctx.is_workspace {
-        return std::env::current_dir()
-            .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| {
-                eprintln!("Error: could not determine project name from current directory");
+    if ctx.workspace.is_none() {
+        return commands::package_name_from_manifest(&ctx.workspace_root.join("Cargo.toml"))
+            .unwrap_or_else(|error| {
+                eprintln!("Error: could not determine project name: {error}");
                 std::process::exit(1);
             });
     }
@@ -1208,10 +1215,8 @@ mod tests {
         .unwrap();
         let ctx = commands::Context {
             workspace_root: root.clone(),
-            codegen_crate: root.clone(),
-            examples_dir: root.clone(),
+            workspace: None,
             backend_so: root.join("unused-backend.so"),
-            is_workspace: false,
             config: commands::OxideConfig::default(),
         };
 

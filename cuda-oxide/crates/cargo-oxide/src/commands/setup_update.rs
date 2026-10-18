@@ -17,11 +17,25 @@ use super::*;
 /// Normally the backend is built automatically on every `run`/`build`/`pipeline`
 /// invocation. `setup` exists for first-time setup, CI, or after pulling new
 /// changes when you want to rebuild without running an example.
+///
+/// A standalone project has no backend source of its own. Resolving the
+/// context already located or built the backend for its cuda-oxide
+/// dependency, so `setup` reports that result; `cargo oxide update` is the
+/// forced rebuild.
 pub fn setup(ctx: &Context) {
+    let Some(workspace) = &ctx.workspace else {
+        println!("✓ Backend ready at {}", ctx.backend_so.display());
+        println!();
+        println!(
+            "Run `cargo oxide update` to rebuild it from the project's cuda-oxide dependency."
+        );
+        return;
+    };
+
     println!("Building cuda-oxide codegen backend...");
     println!();
 
-    let built_so = backend::build_backend_from_source(&ctx.codegen_crate);
+    let built_so = backend::build_backend_from_source(&workspace.codegen_crate);
 
     println!();
     println!("✓ Backend is ready. You can now use:");
@@ -35,7 +49,7 @@ pub fn setup(ctx: &Context) {
     // the cache last held. The cache records the commit it came from, so only
     // projects whose cuda-oxide dependency resolves to this checkout's HEAD
     // pick it up; any other project rebuilds from its own dependency.
-    match backend::publish_to_cache(&built_so, &ctx.codegen_crate) {
+    match backend::publish_to_cache(&built_so, &workspace.codegen_crate) {
         Some(published) => {
             println!();
             println!("✓ Published to {}", published.path.display());
@@ -129,7 +143,7 @@ pub fn update(ctx: &Context, force: bool) {
         std::process::exit(1);
     }
 
-    match plan_update(ctx.is_workspace, force) {
+    match plan_update(ctx.workspace.is_some(), force) {
         UpdatePlan::AdviseSetup => {
             println!("Inside the cuda-oxide workspace the codegen backend is built from");
             println!("local source (`crates/rustc-codegen-cuda`).");

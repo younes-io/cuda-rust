@@ -128,10 +128,8 @@ fn cargo_artifact_freshness(
 fn test_context(config: OxideConfig) -> Context {
     Context {
         workspace_root: PathBuf::from("/tmp/cargo-oxide-test-workspace"),
-        codegen_crate: PathBuf::from("/tmp/cargo-oxide-test-codegen"),
-        examples_dir: PathBuf::from("/tmp/cargo-oxide-test-examples"),
+        workspace: None,
         backend_so: PathBuf::from("llvm"),
-        is_workspace: false,
         config,
     }
 }
@@ -473,10 +471,8 @@ edition = "2024"
 
     let ctx = Context {
         workspace_root: root.clone(),
-        codegen_crate: root.clone(),
-        examples_dir: root.clone(),
+        workspace: None,
         backend_so: root.join("unused-backend.so"),
-        is_workspace: false,
         config: OxideConfig::default(),
     };
 
@@ -526,10 +522,11 @@ edition = "2024"
 
     let ctx = Context {
         workspace_root: root.clone(),
-        codegen_crate: codegen_crate.clone(),
-        examples_dir,
+        workspace: Some(Workspace {
+            codegen_crate: codegen_crate.clone(),
+            examples_dir,
+        }),
         backend_so: root.join("unused-backend.so"),
-        is_workspace: true,
         config: OxideConfig::default(),
     };
 
@@ -572,10 +569,8 @@ edition = "2024"
 
     let ctx = Context {
         workspace_root: root.clone(),
-        codegen_crate: root.clone(),
-        examples_dir: root.clone(),
+        workspace: None,
         backend_so: root.join("unused-backend.so"),
-        is_workspace: false,
         config: OxideConfig::default(),
     };
 
@@ -2754,10 +2749,8 @@ device-owner = { path = "../device-owner" }
 
     let ctx = Context {
         workspace_root: root.clone(),
-        codegen_crate: root.join("unused-codegen-source"),
-        examples_dir: root.join("unused-examples"),
+        workspace: None,
         backend_so: PathBuf::from("llvm"),
-        is_workspace: false,
         config: OxideConfig::default(),
     };
     let base = CargoPassthroughOptions {
@@ -4651,10 +4644,8 @@ fn read_ptx_artifact_reports_missing_file() {
 fn nvvm_ir_requested_reads_project_configuration() {
     let ctx = Context {
         workspace_root: PathBuf::from("/tmp/project"),
-        codegen_crate: PathBuf::from("/tmp/project"),
-        examples_dir: PathBuf::from("/tmp/project"),
+        workspace: None,
         backend_so: PathBuf::from("/tmp/backend.so"),
-        is_workspace: false,
         config: OxideConfig {
             env: vec![("CUDA_OXIDE_EMIT_NVVM_IR".to_string(), "true".to_string())],
             ..OxideConfig::default()
@@ -4668,10 +4659,8 @@ fn nvvm_ir_requested_reads_project_configuration() {
 fn nvvm_ir_requested_accepts_disabled_project_configuration() {
     let ctx = Context {
         workspace_root: PathBuf::from("/tmp/project"),
-        codegen_crate: PathBuf::from("/tmp/project"),
-        examples_dir: PathBuf::from("/tmp/project"),
+        workspace: None,
         backend_so: PathBuf::from("/tmp/backend.so"),
-        is_workspace: false,
         config: OxideConfig {
             env: vec![("CUDA_OXIDE_EMIT_NVVM_IR".to_string(), "false".to_string())],
             ..OxideConfig::default()
@@ -4685,10 +4674,8 @@ fn nvvm_ir_requested_accepts_disabled_project_configuration() {
 fn nvvm_ir_requested_env_disable_overrides_enabled_project_configuration() {
     let ctx = Context {
         workspace_root: PathBuf::from("/tmp/project"),
-        codegen_crate: PathBuf::from("/tmp/project"),
-        examples_dir: PathBuf::from("/tmp/project"),
+        workspace: None,
         backend_so: PathBuf::from("/tmp/backend.so"),
-        is_workspace: false,
         config: OxideConfig {
             env: vec![("CUDA_OXIDE_EMIT_NVVM_IR".to_string(), "true".to_string())],
             ..OxideConfig::default()

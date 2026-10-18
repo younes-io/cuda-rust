@@ -38,10 +38,9 @@ pub(super) struct CleanSummary {
 pub(super) fn clean_context(ctx: &Context) -> Result<CleanSummary, String> {
     let mut summary = CleanSummary::default();
 
-    if ctx.is_workspace {
-        clean_workspace(ctx, &mut summary)?;
-    } else {
-        clean_standalone_project(&ctx.workspace_root, &mut summary)?;
+    match &ctx.workspace {
+        Some(workspace) => clean_workspace(&ctx.workspace_root, workspace, &mut summary)?,
+        None => clean_standalone_project(&ctx.workspace_root, &mut summary)?,
     }
 
     Ok(summary)
@@ -49,7 +48,7 @@ pub(super) fn clean_context(ctx: &Context) -> Result<CleanSummary, String> {
 
 fn clean_standalone_project(project_dir: &Path, summary: &mut CleanSummary) -> Result<(), String> {
     let manifest_path = project_dir.join("Cargo.toml");
-    let package_name = package_name_for_clean(&manifest_path)?;
+    let package_name = package_name_from_manifest(&manifest_path)?;
 
     if remove_local_target(project_dir)? {
         summary.removed_directories += 1;
@@ -60,19 +59,23 @@ fn clean_standalone_project(project_dir: &Path, summary: &mut CleanSummary) -> R
     Ok(())
 }
 
-fn clean_workspace(ctx: &Context, summary: &mut CleanSummary) -> Result<(), String> {
-    if remove_local_target(&ctx.workspace_root)? {
+fn clean_workspace(
+    workspace_root: &Path,
+    workspace: &Workspace,
+    summary: &mut CleanSummary,
+) -> Result<(), String> {
+    if remove_local_target(workspace_root)? {
         summary.removed_directories += 1;
     }
 
-    if remove_local_target(&ctx.codegen_crate)? {
+    if remove_local_target(&workspace.codegen_crate)? {
         summary.removed_directories += 1;
     }
 
-    let entries = std::fs::read_dir(&ctx.examples_dir).map_err(|error| {
+    let entries = std::fs::read_dir(&workspace.examples_dir).map_err(|error| {
         format!(
             "could not read examples directory {}: {error}",
-            ctx.examples_dir.display()
+            workspace.examples_dir.display()
         )
     })?;
 
@@ -82,7 +85,7 @@ fn clean_workspace(ctx: &Context, summary: &mut CleanSummary) -> Result<(), Stri
         let entry = entry.map_err(|error| {
             format!(
                 "could not read an entry in {}: {error}",
-                ctx.examples_dir.display()
+                workspace.examples_dir.display()
             )
         })?;
 
@@ -114,7 +117,7 @@ fn clean_workspace(ctx: &Context, summary: &mut CleanSummary) -> Result<(), Stri
 
 fn clean_example(example_dir: &Path, summary: &mut CleanSummary) -> Result<(), String> {
     let manifest_path = example_dir.join("Cargo.toml");
-    let package_name = package_name_for_clean(&manifest_path)?;
+    let package_name = package_name_from_manifest(&manifest_path)?;
 
     if remove_local_target(example_dir)? {
         summary.removed_directories += 1;
@@ -123,34 +126,6 @@ fn clean_example(example_dir: &Path, summary: &mut CleanSummary) -> Result<(), S
     summary.removed_files += remove_generated_artifacts(example_dir, &package_name)?;
 
     Ok(())
-}
-
-fn package_name_for_clean(manifest_path: &Path) -> Result<String, String> {
-    let source = std::fs::read_to_string(manifest_path).map_err(|error| {
-        format!(
-            "could not read manifest {}: {error}",
-            manifest_path.display()
-        )
-    })?;
-
-    let document: toml::Value = toml::from_str(&source).map_err(|error| {
-        format!(
-            "could not parse manifest {}: {error}",
-            manifest_path.display()
-        )
-    })?;
-
-    document
-        .get("package")
-        .and_then(|value| value.get("name"))
-        .and_then(|value| value.as_str())
-        .map(str::to_owned)
-        .ok_or_else(|| {
-            format!(
-                "manifest {} is missing package.name",
-                manifest_path.display()
-            )
-        })
 }
 
 fn remove_local_target(project_dir: &Path) -> Result<bool, String> {

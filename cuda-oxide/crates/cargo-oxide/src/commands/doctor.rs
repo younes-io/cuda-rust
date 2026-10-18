@@ -440,7 +440,7 @@ pub fn doctor(ctx: &Context) {
     // the commit Cargo resolved for the project's cuda-oxide dependency, and
     // the cache records which commit it came from. Informational: a mismatch
     // heals itself on the next build.
-    if !ctx.is_workspace {
+    if ctx.workspace.is_none() {
         doctor_report_backend_source(ctx);
     }
 
